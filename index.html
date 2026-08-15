@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blood Report Delivery Mapping</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --border:#26313d; --text:#e6edf3; --muted:#8b98a5;
+    --green:#3fb950; --red:#f85149; --accent:#58a6ff;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Bengali",sans-serif;}
+  #app{display:flex;flex-direction:column;height:100%;}
+  header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+  header h1{font-size:15px;margin:0;font-weight:600;}
+  header .stats{font-size:12px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;}
+  header .stats b{color:var(--text);}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;}
+  .dot.g{background:var(--green);} .dot.r{background:var(--red);}
+  #search{padding:6px 16px;border-bottom:1px solid var(--border);}
+  #search input{width:100%;max-width:360px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;}
+  #map{flex:1;min-height:0;}
+  #loading, #err{padding:16px;font-size:13px;color:var(--muted);}
+  #err{color:var(--red);display:none;}
+  .leaflet-popup-content-wrapper{background:var(--panel);color:var(--text);border-radius:8px;}
+  .leaflet-popup-tip{background:var(--panel);}
+  .popup b{font-size:13px;}
+  .popup table{margin-top:6px;font-size:12px;border-collapse:collapse;}
+  .popup td{padding:2px 6px 2px 0;vertical-align:top;}
+  .popup td.k{color:var(--muted);white-space:nowrap;}
+  .status-pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+  .status-pill.yes{background:rgba(63,185,80,.18);color:var(--green);}
+  .status-pill.no{background:rgba(248,81,73,.18);color:var(--red);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🩸 Blood Report Delivery — Mapping</h1>
+    <div class="stats">
+      <span><span class="dot g"></span>Delivered: <b id="cntYes">-</b></span>
+      <span><span class="dot r"></span>Not delivered: <b id="cntNo">-</b></span>
+      <span>Total mapped: <b id="cntTotal">-</b></span>
+    </div>
+  </header>
+  <div id="search"><input id="searchBox" placeholder="Search by Household ID or child name..." /></div>
+  <div id="loading">Loading data.json ...</div>
+  <div id="err">Could not load data.json. Make sure data.json is in the same folder as this page.</div>
+  <div id="map" style="display:none;"></div>
+</div>
+
+<script>
+fetch('./data.json')
+  .then(res => {
+    if (!res.ok) throw new Error('fetch failed');
+    return res.json();
+  })
+  .then(MAP_DATA => {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('map').style.display = '';
+    renderMap(MAP_DATA);
+  })
+  .catch(err => {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('err').style.display = 'block';
+    console.error(err);
+  });
+
+function renderMap(MAP_DATA){
+  const cntYes = MAP_DATA.filter(d=>d.status==='yes').length;
+  const cntNo = MAP_DATA.filter(d=>d.status!=='yes').length;
+  document.getElementById('cntYes').textContent = cntYes;
+  document.getElementById('cntNo').textContent = cntNo;
+  document.getElementById('cntTotal').textContent = MAP_DATA.length;
+
+  const map = L.map('map', {zoomControl:true}).setView([25.925, 88.665], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  function makeIcon(status){
+    const color = status === 'yes' ? '#3fb950' : '#f85149';
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0f1419;box-shadow:0 0 0 1px ${color};"></div>`,
+      iconSize:[14,14],
+      iconAnchor:[7,7]
+    });
+  }
+
+  const markers = [];
+  const bounds = [];
+
+  MAP_DATA.forEach(d => {
+    const marker = L.marker([d.lat, d.lon], {icon: makeIcon(d.status)});
+    const pillClass = d.status === 'yes' ? 'yes' : 'no';
+    const pillText = d.status === 'yes' ? 'Delivered' : 'Not delivered';
+    const popupHtml = `
+      <div class="popup">
+        <b>${d.name}</b> <span class="status-pill ${pillClass}">${pillText}</span>
+        <table>
+          <tr><td class="k">HH ID</td><td>${d.hid}</td></tr>
+          <tr><td class="k">Date</td><td>${d.date || '-'}</td></tr>
+          <tr><td class="k">Received by</td><td>${d.by || '-'}</td></tr>
+          <tr><td class="k">Landmark</td><td>${d.landmark || '-'}</td></tr>
+          <tr><td class="k">Address</td><td>${d.address || '-'}</td></tr>
+        </table>
+      </div>`;
+    marker.bindPopup(popupHtml);
+    marker.searchText = (d.name + ' ' + d.hid).toLowerCase();
+    marker.addTo(map);
+    markers.push(marker);
+    bounds.push([d.lat, d.lon]);
+  });
+
+  if (bounds.length) map.fitBounds(bounds, {padding:[30,30]});
+
+  document.getElementById('searchBox').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    markers.forEach(m => {
+      const match = !q || m.searchText.includes(q);
+      const el = m.getElement();
+      if (el) el.style.display = match ? '' : 'none';
+    });
+  });
+}
+</script>
+</body>
+</html>
