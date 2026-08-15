@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blood Test Report Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --border:#26313d; --text:#e6edf3; --muted:#8b98a5;
+    --green:#3fb950; --red:#f85149; --amber:#d29922; --accent:#58a6ff;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+
+  /* --- Password gate --- */
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:50;}
+  #gate .box{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:28px 26px;width:320px;text-align:center;}
+  #gate h2{margin:0 0 6px;font-size:16px;}
+  #gate p{margin:0 0 16px;font-size:12px;color:var(--muted);}
+  #gate input{width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--border);background:#0f1419;color:var(--text);font-size:13px;margin-bottom:10px;}
+  #gate button{width:100%;padding:9px 10px;border-radius:6px;border:none;background:var(--accent);color:#04141f;font-weight:600;font-size:13px;cursor:pointer;}
+  #gate button:disabled{opacity:.6;cursor:default;}
+  #gateErr{color:var(--red);font-size:12px;min-height:16px;margin-top:8px;}
+
+  /* --- App --- */
+  #app{display:none;height:100vh;flex-direction:column;}
+  header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+  header h1{font-size:15px;margin:0;font-weight:600;}
+  header .stats{font-size:12px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;}
+  header .stats b{color:var(--text);}
+  #body{flex:1;display:flex;min-height:0;}
+
+  /* Sidebar filters */
+  #sidebar{width:230px;flex-shrink:0;border-right:1px solid var(--border);padding:14px;overflow-y:auto;}
+  #sidebar h3{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:16px 0 8px;}
+  #sidebar h3:first-child{margin-top:0;}
+  #sidebar input[type=text]{width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;}
+  .filter-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer;}
+  .filter-row input{cursor:pointer;}
+  #ageRange{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);}
+  #ageRange input{width:56px;padding:5px 6px;border-radius:5px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px;}
+  #resetBtn{margin-top:16px;width:100%;padding:7px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;}
+  #resetBtn:hover{color:var(--text);border-color:var(--accent);}
+
+  /* Table */
+  #tableWrap{flex:1;overflow:auto;}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;}
+  thead th{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--border);padding:8px 10px;text-align:left;white-space:nowrap;cursor:pointer;user-select:none;}
+  thead th:hover{color:var(--accent);}
+  tbody td{padding:7px 10px;border-bottom:1px solid #1c2530;white-space:nowrap;}
+  tbody tr:hover{background:#141a23;}
+  td.abn{color:var(--red);font-weight:600;}
+  td.ok{color:var(--green);}
+  td.na{color:var(--muted);}
+  .rowcount{padding:8px 16px;font-size:12px;color:var(--muted);}
+  .legend{display:flex;gap:16px;font-size:11px;color:var(--muted);padding:0 16px 10px;}
+  .legend span{display:flex;align-items:center;gap:5px;}
+  .sw{width:9px;height:9px;border-radius:2px;display:inline-block;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="box">
+    <h2>🔒 Blood Test Report Dashboard</h2>
+    <p>This page contains participants' clinical lab results. Enter the access password to continue.</p>
+    <input type="password" id="pwInput" placeholder="Password" autofocus />
+    <button id="unlockBtn">Unlock</button>
+    <div id="gateErr"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <h1>🩸 Blood Test Report Dashboard</h1>
+    <div class="stats">
+      <span>Total records: <b id="cntTotal">-</b></span>
+      <span>With any abnormal value: <b id="cntAbn">-</b></span>
+      <span>Showing: <b id="cntShown">-</b></span>
+    </div>
+  </header>
+  <div id="body">
+    <div id="sidebar">
+      <h3>Search</h3>
+      <input type="text" id="searchBox" placeholder="Name or HHID..." />
+
+      <h3>Age</h3>
+      <div id="ageRange">
+        <input type="number" id="ageMin" placeholder="Min" />
+        <span>–</span>
+        <input type="number" id="ageMax" placeholder="Max" />
+      </div>
+
+      <h3>Result status</h3>
+      <label class="filter-row"><input type="checkbox" id="onlyAbnormal" /> Show only abnormal (any parameter)</label>
+
+      <h3>Abnormal in parameter</h3>
+      <div id="paramFilters"></div>
+
+      <button id="resetBtn">Reset filters</button>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;min-height:0;">
+      <div class="legend">
+        <span><span class="sw" style="background:var(--red)"></span>Out of normal range</span>
+        <span><span class="sw" style="background:var(--green)"></span>Within range</span>
+        <span><span class="sw" style="background:var(--muted)"></span>No reference range defined</span>
+      </div>
+      <div class="rowcount" id="rowcount"></div>
+      <div id="tableWrap"><table id="table"></table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA_FILE = './blood_data.enc.json';
+
+function b64ToBytes(b64){
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function deriveKey(password, saltB64, iterations){
+  const salt = b64ToBytes(saltB64);
+  const passKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations, hash:'SHA-256' },
+    passKey,
+    { name:'AES-GCM', length:256 },
+    false,
+    ['decrypt']
+  );
+}
+
+async function decryptPayload(enc, password){
+  const key = await deriveKey(password, enc.salt, enc.iterations);
+  const iv = b64ToBytes(enc.iv);
+  const ciphertext = b64ToBytes(enc.ciphertext);
+  const plainBuf = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ciphertext);
+  return JSON.parse(new TextDecoder().decode(plainBuf));
+}
+
+let PARAM_KEYS = [];
+let RANGES = {};
+let RECORDS = [];
+let sortState = {key:null, dir:1};
+
+const unlockBtn = document.getElementById('unlockBtn');
+const pwInput = document.getElementById('pwInput');
+const gateErr = document.getElementById('gateErr');
+
+async function tryUnlock(){
+  const password = pwInput.value;
+  if (!password) return;
+  unlockBtn.disabled = true;
+  unlockBtn.textContent = 'Unlocking...';
+  gateErr.textContent = '';
+  try {
+    const res = await fetch(DATA_FILE);
+    if (!res.ok) throw new Error('fetch-failed');
+    const enc = await res.json();
+    const payload = await decryptPayload(enc, password);
+    RANGES = payload.ranges;
+    RECORDS = payload.records;
+    PARAM_KEYS = Object.keys(RANGES);
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    initDashboard();
+  } catch (e) {
+    console.error(e);
+    gateErr.textContent = e.message === 'fetch-failed'
+      ? 'Could not load blood_data.enc.json. Check it is in the same folder.'
+      : 'Wrong password. Try again.';
+    unlockBtn.disabled = false;
+    unlockBtn.textContent = 'Unlock';
+  }
+}
+unlockBtn.addEventListener('click', tryUnlock);
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
+
+function isAbnormal(key, value){
+  const r = RANGES[key];
+  if (!r || value === null || value === undefined || value === '') return null; // no range / no data
+  if (r.low === null && r.high === null) return null;
+  if (r.low !== null && value < r.low) return true;
+  if (r.high !== null && value > r.high) return true;
+  return false;
+}
+
+function recordHasAnyAbnormal(rec){
+  return PARAM_KEYS.some(k => isAbnormal(k, rec[k]) === true);
+}
+
+function initDashboard(){
+  document.getElementById('cntTotal').textContent = RECORDS.length;
+  document.getElementById('cntAbn').textContent = RECORDS.filter(recordHasAnyAbnormal).length;
+
+  const paramFiltersEl = document.getElementById('paramFilters');
+  PARAM_KEYS.forEach(k => {
+    const r = RANGES[k];
+    const row = document.createElement('label');
+    row.className = 'filter-row';
+    row.innerHTML = `<input type="checkbox" data-param="${k}" /> ${r.label}`;
+    paramFiltersEl.appendChild(row);
+  });
+
+  ['input','change'].forEach(evt => {
+    document.getElementById('searchBox').addEventListener(evt, renderTable);
+    document.getElementById('ageMin').addEventListener(evt, renderTable);
+    document.getElementById('ageMax').addEventListener(evt, renderTable);
+    document.getElementById('onlyAbnormal').addEventListener(evt, renderTable);
+  });
+  paramFiltersEl.addEventListener('change', renderTable);
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    document.getElementById('searchBox').value = '';
+    document.getElementById('ageMin').value = '';
+    document.getElementById('ageMax').value = '';
+    document.getElementById('onlyAbnormal').checked = false;
+    paramFiltersEl.querySelectorAll('input').forEach(i => i.checked = false);
+    sortState = {key:null, dir:1};
+    renderTable();
+  });
+
+  renderTable();
+}
+
+function getFiltered(){
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const ageMin = parseFloat(document.getElementById('ageMin').value);
+  const ageMax = parseFloat(document.getElementById('ageMax').value);
+  const onlyAbnormal = document.getElementById('onlyAbnormal').checked;
+  const activeParams = Array.from(document.querySelectorAll('#paramFilters input:checked')).map(i => i.dataset.param);
+
+  return RECORDS.filter(rec => {
+    if (q && !((String(rec.name||'').toLowerCase().includes(q)) || String(rec.hhid||'').toLowerCase().includes(q))) return false;
+    if (!isNaN(ageMin) && rec.age < ageMin) return false;
+    if (!isNaN(ageMax) && rec.age > ageMax) return false;
+    if (onlyAbnormal && !recordHasAnyAbnormal(rec)) return false;
+    if (activeParams.length && !activeParams.some(k => isAbnormal(k, rec[k]) === true)) return false;
+    return true;
+  });
+}
+
+function renderTable(){
+  let rows = getFiltered();
+
+  if (sortState.key){
+    rows = rows.slice().sort((a,b) => {
+      const va = a[sortState.key], vb = b[sortState.key];
+      if (va === null || va === undefined) return 1;
+      if (vb === null || vb === undefined) return -1;
+      if (va < vb) return -1 * sortState.dir;
+      if (va > vb) return 1 * sortState.dir;
+      return 0;
+    });
+  }
+
+  document.getElementById('cntShown').textContent = rows.length;
+  document.getElementById('rowcount').textContent = `${rows.length} of ${RECORDS.length} records`;
+
+  const cols = [
+    {key:'hhid', label:'HHID'},
+    {key:'name', label:'Name'},
+    {key:'age', label:'Age'},
+    {key:'date', label:'Collection Date'},
+    ...PARAM_KEYS.map(k => ({key:k, label: RANGES[k].label + (RANGES[k].unit ? ` (${RANGES[k].unit})` : '')})),
+  ];
+
+  const table = document.getElementById('table');
+  const thead = `<thead><tr>${cols.map(c => `<th data-key="${c.key}">${c.label}${sortState.key===c.key ? (sortState.dir>0?' ▲':' ▼') : ''}</th>`).join('')}</tr></thead>`;
+
+  const tbody = rows.map(rec => {
+    const cells = cols.map(c => {
+      if (['hhid','name','age','date'].includes(c.key)) {
+        return `<td>${rec[c.key] ?? '-'}</td>`;
+      }
+      const val = rec[c.key];
+      const abn = isAbnormal(c.key, val);
+      const cls = abn === null ? 'na' : (abn ? 'abn' : 'ok');
+      return `<td class="${cls}">${val ?? '-'}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  table.innerHTML = thead + `<tbody>${tbody}</tbody>`;
+
+  table.querySelectorAll('thead th').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (sortState.key === key) sortState.dir *= -1;
+      else { sortState.key = key; sortState.dir = 1; }
+      renderTable();
+    });
+  });
+}
+</script>
+</body>
+</html>
