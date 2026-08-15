@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Blood Report Delivery Mapping</title>
@@ -12,7 +12,7 @@
     --green:#3fb950; --red:#f85149; --accent:#58a6ff;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Bengali",sans-serif;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
   #app{display:flex;flex-direction:column;height:100%;}
   header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
   header h1{font-size:15px;margin:0;font-weight:600;}
@@ -20,8 +20,18 @@
   header .stats b{color:var(--text);}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;}
   .dot.g{background:var(--green);} .dot.r{background:var(--red);}
-  #search{padding:6px 16px;border-bottom:1px solid var(--border);}
-  #search input{width:100%;max-width:360px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;}
+
+  #body{flex:1;display:flex;min-height:0;}
+  #sidebar{width:220px;flex-shrink:0;border-right:1px solid var(--border);padding:14px;overflow-y:auto;}
+  #sidebar h3{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:16px 0 8px;}
+  #sidebar h3:first-child{margin-top:0;}
+  #sidebar input[type=text]{width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:13px;}
+  .filter-row{display:flex;align-items:center;gap:7px;font-size:13px;padding:3px 0;cursor:pointer;}
+  .filter-row input{cursor:pointer;}
+  #resetBtn{margin-top:16px;width:100%;padding:7px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;}
+  #resetBtn:hover{color:var(--text);border-color:var(--accent);}
+
+  #mapCol{flex:1;display:flex;flex-direction:column;min-height:0;}
   #map{flex:1;min-height:0;}
   #loading, #err{padding:16px;font-size:13px;color:var(--muted);}
   #err{color:var(--red);display:none;}
@@ -39,20 +49,38 @@
 <body>
 <div id="app">
   <header>
-    <h1>🩸 Blood Report Delivery — Mapping</h1>
+    <h1>Blood Report Delivery — Mapping</h1>
     <div class="stats">
       <span><span class="dot g"></span>Delivered: <b id="cntYes">-</b></span>
       <span><span class="dot r"></span>Not delivered: <b id="cntNo">-</b></span>
       <span>Total mapped: <b id="cntTotal">-</b></span>
     </div>
   </header>
-  <div id="search"><input id="searchBox" placeholder="Household ID / child name diye khujun..." /></div>
-  <div id="loading">Loading data.json ...</div>
-  <div id="err">data.json load kora jayni. Same folder e data.json file ache kina check korun.</div>
-  <div id="map" style="display:none;"></div>
+  <div id="body">
+    <div id="sidebar">
+      <h3>Search</h3>
+      <input type="text" id="searchBox" placeholder="Household ID or name..." />
+
+      <h3>Delivery status</h3>
+      <label class="filter-row"><input type="checkbox" class="statusFilter" value="yes" checked /> Delivered</label>
+      <label class="filter-row"><input type="checkbox" class="statusFilter" value="no" checked /> Not delivered</label>
+
+      <h3>Delivery date</h3>
+      <div id="dateFilters"></div>
+
+      <button id="resetBtn">Reset filters</button>
+    </div>
+    <div id="mapCol">
+      <div id="loading">Loading data.json ...</div>
+      <div id="err">Could not load data.json. Make sure data.json is in the same folder as this page.</div>
+      <div id="map" style="display:none;"></div>
+    </div>
+  </div>
 </div>
 
 <script>
+const BGD_BOUNDARY_URL = 'https://raw.githubusercontent.com/johan/world.geo.json/master/countries/BGD.geo.json';
+
 fetch('./data.json')
   .then(res => {
     if (!res.ok) throw new Error('fetch failed');
@@ -82,6 +110,24 @@ function renderMap(MAP_DATA){
     attribution: '© OpenStreetMap contributors'
   }).addTo(map);
 
+  // Highlight the Bangladesh country boundary
+  fetch(BGD_BOUNDARY_URL)
+    .then(res => res.ok ? res.json() : null)
+    .then(geojson => {
+      if (!geojson) return;
+      L.geoJSON(geojson, {
+        style: {
+          color: '#58a6ff',
+          weight: 2,
+          fillColor: '#58a6ff',
+          fillOpacity: 0.06,
+          dashArray: '4 3'
+        },
+        interactive: false
+      }).addTo(map);
+    })
+    .catch(() => {}); // non-critical, skip silently if it fails
+
   function makeIcon(status){
     const color = status === 'yes' ? '#3fb950' : '#f85149';
     return L.divIcon({
@@ -91,6 +137,15 @@ function renderMap(MAP_DATA){
       iconAnchor:[7,7]
     });
   }
+
+  const dates = Array.from(new Set(MAP_DATA.map(d => d.date).filter(Boolean))).sort();
+  const dateFiltersEl = document.getElementById('dateFilters');
+  dates.forEach(dt => {
+    const row = document.createElement('label');
+    row.className = 'filter-row';
+    row.innerHTML = `<input type="checkbox" class="dateFilter" value="${dt}" checked /> ${dt}`;
+    dateFiltersEl.appendChild(row);
+  });
 
   const markers = [];
   const bounds = [];
@@ -112,6 +167,8 @@ function renderMap(MAP_DATA){
       </div>`;
     marker.bindPopup(popupHtml);
     marker.searchText = (d.name + ' ' + d.hid).toLowerCase();
+    marker.status = d.status;
+    marker.date = d.date;
     marker.addTo(map);
     markers.push(marker);
     bounds.push([d.lat, d.lon]);
@@ -119,13 +176,29 @@ function renderMap(MAP_DATA){
 
   if (bounds.length) map.fitBounds(bounds, {padding:[30,30]});
 
-  document.getElementById('searchBox').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
+  function applyFilters(){
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    const activeStatuses = Array.from(document.querySelectorAll('.statusFilter:checked')).map(i => i.value);
+    const activeDates = Array.from(document.querySelectorAll('.dateFilter:checked')).map(i => i.value);
     markers.forEach(m => {
-      const match = !q || m.searchText.includes(q);
+      const matchQ = !q || m.searchText.includes(q);
+      const matchStatus = activeStatuses.includes(m.status);
+      const matchDate = !m.date || activeDates.includes(m.date);
+      const match = matchQ && matchStatus && matchDate;
       const el = m.getElement();
       if (el) el.style.display = match ? '' : 'none';
     });
+  }
+
+  document.getElementById('searchBox').addEventListener('input', applyFilters);
+  document.querySelectorAll('.statusFilter').forEach(cb => cb.addEventListener('change', applyFilters));
+  dateFiltersEl.addEventListener('change', applyFilters);
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    document.getElementById('searchBox').value = '';
+    document.querySelectorAll('.statusFilter').forEach(cb => cb.checked = true);
+    document.querySelectorAll('.dateFilter').forEach(cb => cb.checked = true);
+    applyFilters();
   });
 }
 </script>
