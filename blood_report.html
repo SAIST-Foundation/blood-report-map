@@ -4,16 +4,11 @@
 <meta charset="UTF-8">
 <title>Blood Test Report Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
-    --bg:#ffffff;
-  --panel:#f6f8fa;
-  --border:#d0d7de;
-  --text:#1f2328;
-  --muted:#57606a;
-  --green:#1a7f37;
-  --red:#cf222e;
-  --accent:#0969da;
+    --bg:#0f1419; --panel:#161d26; --border:#26313d; --text:#e6edf3; --muted:#8b98a5;
+    --green:#3fb950; --red:#f85149; --amber:#d29922; --accent:#58a6ff;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
@@ -58,7 +53,10 @@
   td.abn{color:var(--red);font-weight:600;}
   td.ok{color:var(--green);}
   td.na{color:var(--muted);}
-  .rowcount{padding:8px 16px;font-size:12px;color:var(--muted);}
+  .rowcount{padding:8px 16px;font-size:12px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .downloadBtns{display:flex;gap:8px;}
+  .downloadBtns button{padding:5px 11px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px;cursor:pointer;}
+  .downloadBtns button:hover{border-color:var(--accent);color:var(--accent);}
   .legend{display:flex;gap:16px;font-size:11px;color:var(--muted);padding:0 16px 10px;}
   .legend span{display:flex;align-items:center;gap:5px;}
   .sw{width:9px;height:9px;border-radius:2px;display:inline-block;}
@@ -111,7 +109,13 @@
         <span><span class="sw" style="background:var(--green)"></span>Within range</span>
         <span><span class="sw" style="background:var(--muted)"></span>No reference range defined</span>
       </div>
-      <div class="rowcount" id="rowcount"></div>
+      <div class="rowcount">
+        <span id="rowcountText"></span>
+        <div class="downloadBtns">
+          <button id="downloadCsvBtn">⬇ Download CSV</button>
+          <button id="downloadXlsxBtn">⬇ Download Excel</button>
+        </div>
+      </div>
       <div id="tableWrap"><table id="table"></table></div>
     </div>
   </div>
@@ -251,9 +255,18 @@ function getFiltered(){
   });
 }
 
-function renderTable(){
-  let rows = getFiltered();
+function getColumns(){
+  return [
+    {key:'hhid', label:'HHID'},
+    {key:'name', label:'Name'},
+    {key:'age', label:'Age'},
+    {key:'date', label:'Collection Date'},
+    ...PARAM_KEYS.map(k => ({key:k, label: RANGES[k].label + (RANGES[k].unit ? ` (${RANGES[k].unit})` : '')})),
+  ];
+}
 
+function getSortedFiltered(){
+  let rows = getFiltered();
   if (sortState.key){
     rows = rows.slice().sort((a,b) => {
       const va = a[sortState.key], vb = b[sortState.key];
@@ -264,17 +277,59 @@ function renderTable(){
       return 0;
     });
   }
+  return rows;
+}
+
+function rowsToAOA(rows){
+  const cols = getColumns();
+  const header = cols.map(c => c.label);
+  const body = rows.map(rec => cols.map(c => rec[c.key] ?? ''));
+  return [header, ...body];
+}
+
+function triggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCSV(){
+  const rows = getSortedFiltered();
+  const aoa = rowsToAOA(rows);
+  const csv = aoa.map(row =>
+    row.map(cell => {
+      const s = String(cell ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(',')
+  ).join('\r\n');
+  const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});
+  triggerDownload(blob, `blood_report_${rows.length}_records.csv`);
+}
+
+function downloadXLSX(){
+  const rows = getSortedFiltered();
+  const aoa = rowsToAOA(rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Blood Report');
+  XLSX.writeFile(wb, `blood_report_${rows.length}_records.xlsx`);
+}
+
+document.getElementById('downloadCsvBtn').addEventListener('click', downloadCSV);
+document.getElementById('downloadXlsxBtn').addEventListener('click', downloadXLSX);
+
+function renderTable(){
+  const rows = getSortedFiltered();
 
   document.getElementById('cntShown').textContent = rows.length;
-  document.getElementById('rowcount').textContent = `${rows.length} of ${RECORDS.length} records`;
+  document.getElementById('rowcountText').textContent = `${rows.length} of ${RECORDS.length} records`;
 
-  const cols = [
-    {key:'hhid', label:'HHID'},
-    {key:'name', label:'Name'},
-    {key:'age', label:'Age'},
-    {key:'date', label:'Collection Date'},
-    ...PARAM_KEYS.map(k => ({key:k, label: RANGES[k].label + (RANGES[k].unit ? ` (${RANGES[k].unit})` : '')})),
-  ];
+  const cols = getColumns();
 
   const table = document.getElementById('table');
   const thead = `<thead><tr>${cols.map(c => `<th data-key="${c.key}">${c.label}${sortState.key===c.key ? (sortState.dir>0?' ▲':' ▼') : ''}</th>`).join('')}</tr></thead>`;

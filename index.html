@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0f1419; --panel:#161d26; --border:#26313d; --text:#e6edf3; --muted:#8b98a5;
@@ -30,6 +31,9 @@
   .filter-row input{cursor:pointer;}
   #resetBtn{margin-top:16px;width:100%;padding:7px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;}
   #resetBtn:hover{color:var(--text);border-color:var(--accent);}
+  .downloadBtns{margin-top:8px;display:flex;flex-direction:column;gap:6px;}
+  .downloadBtns button{padding:7px;border-radius:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12px;cursor:pointer;}
+  .downloadBtns button:hover{border-color:var(--accent);color:var(--accent);}
 
   #mapCol{flex:1;display:flex;flex-direction:column;min-height:0;}
   #map{flex:1;min-height:0;}
@@ -69,6 +73,10 @@
       <div id="dateFilters"></div>
 
       <button id="resetBtn">Reset filters</button>
+      <div class="downloadBtns">
+        <button id="downloadCsvBtn">⬇ Download CSV</button>
+        <button id="downloadXlsxBtn">⬇ Download Excel</button>
+      </div>
     </div>
     <div id="mapCol">
       <div id="loading">Loading data.json ...</div>
@@ -189,6 +197,74 @@ function renderMap(MAP_DATA){
       if (el) el.style.display = match ? '' : 'none';
     });
   }
+
+  function getVisibleData(){
+    // Re-derive currently visible rows from MAP_DATA using the same filter logic applyFilters uses
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    const activeStatuses = Array.from(document.querySelectorAll('.statusFilter:checked')).map(i => i.value);
+    const activeDates = Array.from(document.querySelectorAll('.dateFilter:checked')).map(i => i.value);
+    return MAP_DATA.filter(d => {
+      const searchText = (d.name + ' ' + d.hid).toLowerCase();
+      const matchQ = !q || searchText.includes(q);
+      const matchStatus = activeStatuses.includes(d.status);
+      const matchDate = !d.date || activeDates.includes(d.date);
+      return matchQ && matchStatus && matchDate;
+    });
+  }
+
+  const EXPORT_COLS = [
+    {key:'hid', label:'Household ID'},
+    {key:'name', label:'Name'},
+    {key:'status', label:'Delivery Status'},
+    {key:'date', label:'Delivery Date'},
+    {key:'by', label:'Received By'},
+    {key:'landmark', label:'Landmark'},
+    {key:'address', label:'Address'},
+    {key:'lat', label:'Latitude'},
+    {key:'lon', label:'Longitude'},
+  ];
+
+  function rowsToAOA(rows){
+    const header = EXPORT_COLS.map(c => c.label);
+    const body = rows.map(rec => EXPORT_COLS.map(c => rec[c.key] ?? ''));
+    return [header, ...body];
+  }
+
+  function triggerDownload(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadCSV(){
+    const rows = getVisibleData();
+    const aoa = rowsToAOA(rows);
+    const csv = aoa.map(row =>
+      row.map(cell => {
+        const s = String(cell ?? '');
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      }).join(',')
+    ).join('\r\n');
+    const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});
+    triggerDownload(blob, `delivery_map_${rows.length}_records.csv`);
+  }
+
+  function downloadXLSX(){
+    const rows = getVisibleData();
+    const aoa = rowsToAOA(rows);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Delivery Map');
+    XLSX.writeFile(wb, `delivery_map_${rows.length}_records.xlsx`);
+  }
+
+  document.getElementById('downloadCsvBtn').addEventListener('click', downloadCSV);
+  document.getElementById('downloadXlsxBtn').addEventListener('click', downloadXLSX);
 
   document.getElementById('searchBox').addEventListener('input', applyFilters);
   document.querySelectorAll('.statusFilter').forEach(cb => cb.addEventListener('change', applyFilters));
