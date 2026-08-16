@@ -36,13 +36,18 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 PBKDF2_ITERATIONS = 250_000  # must match the value in blood_report.html
 
 NORMAL_RANGES = {
+    # Fasting sugar: both hypo- and hyper-glycemia are clinically meaningful -> two-sided.
     "Fasting_Blood_Sugar": {"label": "Fasting Blood Sugar", "unit": "mmol/L", "low": 4.2, "high": 6.4},
-    "Serum_Creatinine": {"label": "Serum Creatinine", "unit": "mg/dL", "low": 0.5, "high": 0.9},
+    # Creatinine: elevated value is the clinically meaningful signal (kidney function) -> upper bound only.
+    "Serum_Creatinine": {"label": "Serum Creatinine", "unit": "mg/dL", "low": None, "high": 0.9},
     "SGPT(ALT)": {"label": "ALT (SGPT)", "unit": "U/L", "low": None, "high": 34.0},
-    "SGPT_Total_Cholesterol": {"label": "Total Cholesterol", "unit": "mg/dL", "low": 170, "high": 200},
-    "SGPT_HDL": {"label": "HDL", "unit": "mg/dL", "low": 35, "high": 65},
+    # Total cholesterol: only "too high" is a clinical concern -> upper bound only.
+    "SGPT_Total_Cholesterol": {"label": "Total Cholesterol", "unit": "mg/dL", "low": None, "high": 200},
+    # HDL is protective — only "too low" is a clinical concern (high HDL is not flagged).
+    "SGPT_HDL": {"label": "HDL", "unit": "mg/dL", "low": 35, "high": None},
     "SGPT_LDL": {"label": "LDL", "unit": "mg/dL", "low": None, "high": 200},
-    "SGPT_Total_Triglycerides": {"label": "Triglycerides", "unit": "mg/dL", "low": 150, "high": 200},
+    # Triglycerides: only "too high" is a clinical concern -> upper bound only.
+    "SGPT_Total_Triglycerides": {"label": "Triglycerides", "unit": "mg/dL", "low": None, "high": 200},
     "eGFR": {"label": "eGFR", "unit": "", "low": None, "high": None},
 }
 
